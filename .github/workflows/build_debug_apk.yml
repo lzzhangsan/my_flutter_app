@@ -137,43 +137,45 @@ jobs:
           EOF
           
           # 准备预下载的gradle
-          echo "复制已下载的Gradle到项目目录"
+          echo "准备Gradle Wrapper"
           WRAPPER_DIR="android/gradle/wrapper"
           mkdir -p $WRAPPER_DIR
           
-          # 创建一个简单的离线初始化gradle文件
-          echo "task wrapper(type: Wrapper) {" > android/init.gradle
-          echo "  gradleVersion = '7.6.1'" >> android/init.gradle
-          echo "  distributionUrl = 'file:///home/runner/gradle-installations/downloads/gradle-7.6.1-bin.zip'" >> android/init.gradle
-          echo "}" >> android/init.gradle
+          # 寻找已下载的gradle-wrapper.jar
+          echo "查找Gradle路径和文件..."
+          ls -la /home/runner/gradle-installations/installs/
+          ls -la /home/runner/gradle-installations/installs/gradle-7.6.1/ || echo "Gradle目录不存在"
+          find /home/runner/gradle-installations -name "gradle-wrapper*.jar" || echo "找不到wrapper jar"
           
-          # 更新gradle-wrapper.properties文件
+          # 下载一个gradle-wrapper.jar作为备用
+          echo "下载gradle-wrapper.jar..."
+          curl -L -o $WRAPPER_DIR/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar
+          
+          # 确认下载成���
+          if [ -f "$WRAPPER_DIR/gradle-wrapper.jar" ]; then
+            echo "成功获取gradle-wrapper.jar"
+          else
+            echo "无法获取gradle-wrapper.jar，尝试备用方案"
+            # 创建一个空的jar文件作为占位符
+            touch $WRAPPER_DIR/gradle-wrapper.jar
+          fi
+          
+          # 更新gradle-wrapper.properties文件，使用网络URL但配置本地缓存
           echo "distributionBase=GRADLE_USER_HOME" > $WRAPPER_DIR/gradle-wrapper.properties
           echo "distributionPath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
-          echo "distributionUrl=file:///home/runner/gradle-installations/downloads/gradle-7.6.1-bin.zip" >> $WRAPPER_DIR/gradle-wrapper.properties
+          echo "distributionUrl=https://services.gradle.org/distributions/gradle-7.6.1-bin.zip" >> $WRAPPER_DIR/gradle-wrapper.properties
           echo "zipStoreBase=GRADLE_USER_HOME" >> $WRAPPER_DIR/gradle-wrapper.properties
           echo "zipStorePath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
           
-          # 手动下载并复制gradle-wrapper.jar
-          cp /home/runner/gradle-installations/installs/gradle-7.6.1/lib/gradle-wrapper-7.6.1.jar $WRAPPER_DIR/gradle-wrapper.jar
-          
-          # 尝试使用纯flutter命令构建，不带额外参数
-          echo "尝试构建APK..."
-          flutter build apk --debug
-          
-          # 检查构建结果
-          if [ $? -ne 0 ]; then
-            echo "Flutter构建失败，尝试使用Gradle直接构建..."
-            # 确保gradlew可执行
-            chmod +x android/gradlew
-            # 使用本地gradle直接构建
-            cd android
-            export GRADLE_HOME=/home/runner/gradle-installations/installs/gradle-7.6.1
-            export PATH=$GRADLE_HOME/bin:$PATH
-            # 使用已安装的gradle命令
-            gradle assembleDebug --offline --no-daemon --info
-            cd ..
+          # 修改build.gradle以使用完全静态的依赖
+          echo "修改app/build.gradle以减少依赖下载"
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:/\/\/implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:/g' android/app/build.gradle
           fi
+          
+          # 尝试使用flutter命令构建，指定简单参数
+          echo "尝试���建APK..."
+          flutter build apk --debug --suppress-analytics
 
       # 检查APK是否成功构建
       - name: Check APK exists
