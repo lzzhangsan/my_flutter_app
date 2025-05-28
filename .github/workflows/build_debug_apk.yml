@@ -124,17 +124,56 @@ jobs:
       - name: Build Debug APK
         run: |
           echo "直接使用Flutter命令构建APK"
-          # 创建本地属性文件，使用离线模式
-          echo "org.gradle.offline=true" >> android/gradle.properties
-          # 增加重试和网络失败处理
-          for i in 1 2 3; do
-            if [ $i -gt 1 ]; then
-              echo "构建失败，尝试第 $i 次重试..."
-              sleep 10
-            fi
-            # 尝试使用--local-only参数，减少网络依赖
-            flutter build apk --debug --local-engine-host=host_release_arm64 && break
-          done
+          
+          # 配置离线模式和更多网络参数
+          mkdir -p android/app/src/main/assets
+          
+          # 修改android/gradle.properties文件，添加更多离线设置
+          cat >> android/gradle.properties << EOF
+          org.gradle.offline=true
+          android.enableJetifier=true
+          android.enableR8=true
+          org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -Dhttp.socketTimeout=180000 -Dhttp.connectionTimeout=180000
+          EOF
+          
+          # 准备预下载的gradle
+          echo "复制已下载的Gradle到项目目录"
+          WRAPPER_DIR="android/gradle/wrapper"
+          mkdir -p $WRAPPER_DIR
+          
+          # 创建一个简单的离线初始化gradle文件
+          echo "task wrapper(type: Wrapper) {" > android/init.gradle
+          echo "  gradleVersion = '7.6.1'" >> android/init.gradle
+          echo "  distributionUrl = 'file:///home/runner/gradle-installations/downloads/gradle-7.6.1-bin.zip'" >> android/init.gradle
+          echo "}" >> android/init.gradle
+          
+          # 更新gradle-wrapper.properties文件
+          echo "distributionBase=GRADLE_USER_HOME" > $WRAPPER_DIR/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
+          echo "distributionUrl=file:///home/runner/gradle-installations/downloads/gradle-7.6.1-bin.zip" >> $WRAPPER_DIR/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> $WRAPPER_DIR/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
+          
+          # 手动下载并复制gradle-wrapper.jar
+          cp /home/runner/gradle-installations/installs/gradle-7.6.1/lib/gradle-wrapper-7.6.1.jar $WRAPPER_DIR/gradle-wrapper.jar
+          
+          # 尝试使用纯flutter命令构建，不带额外参数
+          echo "尝试构建APK..."
+          flutter build apk --debug
+          
+          # 检查构建结果
+          if [ $? -ne 0 ]; then
+            echo "Flutter构建失败，尝试使用Gradle直接构建..."
+            # 确保gradlew可执行
+            chmod +x android/gradlew
+            # 使用本地gradle直接构建
+            cd android
+            export GRADLE_HOME=/home/runner/gradle-installations/installs/gradle-7.6.1
+            export PATH=$GRADLE_HOME/bin:$PATH
+            # 使用已安装的gradle命令
+            gradle assembleDebug --offline --no-daemon --info
+            cd ..
+          fi
 
       # 检查APK是否成功构建
       - name: Check APK exists
