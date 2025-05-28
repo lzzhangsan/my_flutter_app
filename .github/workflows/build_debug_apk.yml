@@ -9,84 +9,27 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 使用稳定的ubuntu-22.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # 设置超时时间
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 添加更明确的缓存步骤，独立于setup-java
-      - name: Setup Gradle Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.android/build-cache
-            ~/.android/avd
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
+      # 设置Java环境
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-          # 不设置缓存类型，避免使用无效值 'none'
 
-      # 直接下载并安装Gradle，避免Gradle Wrapper的网络问题
+      # 设置Gradle (使用新的推荐操作)
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '7.6.1'  # 使用特定版本的Gradle
-          # 禁用缓存清理，由我们自己的缓存步骤管理
-          gradle-home-cache-cleanup: false
-          # 只用于安装Gradle，不执行命令
-          arguments: ''
+          gradle-version: '7.6.1'
 
-      # 添加额外的Flutter缓存
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ${{ env.FLUTTER_HOME }}/.pub-cache
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
-
-      # 检查项目结构
-      - name: Check project structure
-        run: |
-          echo "列出项目结构:"
-          ls -la
-          echo "列出android目录结构:"
-          ls -la android/
-          if [ -d "android/gradle/wrapper" ]; then
-            echo "列出android/gradle目录结构:"
-            ls -la android/gradle/wrapper/
-            echo "gradle-wrapper.properties内容:"
-            cat android/gradle/wrapper/gradle-wrapper.properties
-          else
-            echo "android/gradle/wrapper 目录不存在"
-          fi
-          
-          # 确保gradlew可执行
-          if [ -f "android/gradlew" ]; then
-            echo "设置gradlew为可执行:"
-            chmod +x android/gradlew
-          else
-            echo "android/gradlew 文件不存在"
-          fi
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          # 使用内置缓存管理
-          cache: true
-
-      # 配置网络参数
+      # 配置网络参数 - 设置HTTP代理绕过问题
       - name: Configure network settings
         run: |
           mkdir -p ~/.gradle
@@ -95,21 +38,59 @@ jobs:
           org.gradle.daemon=false
           org.gradle.parallel=true
           org.gradle.caching=true
+          org.gradle.offline=true
           systemProp.https.protocols=TLSv1.2,TLSv1.3
           systemProp.http.connectionTimeout=180000
           systemProp.http.socketTimeout=180000
           systemProp.http.keepAlive=false
           EOF
 
-      # 修改build.gradle以使用镜像仓库
-      - name: Setup Gradle repositories
+      # 预先创建和配置gradle wrapper目录
+      - name: Setup Gradle Wrapper
         run: |
-          cd android
-          # 修改项目级build.gradle
-          if [ -f build.gradle ]; then
-            cat > build.gradle.new << EOF
+          mkdir -p android/gradle/wrapper
+          # 下载gradle-wrapper.jar (添加多个备用下载源)
+          echo "下载gradle-wrapper.jar..."
+          if ! curl -L --retry 5 --retry-delay 5 --connect-timeout 60 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar; then
+            echo "尝试备用下载源..."
+            if ! curl -L --retry 5 --retry-delay 5 --connect-timeout 60 -o android/gradle/wrapper/gradle-wrapper.jar https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/7.6.1/gradle-wrapper-7.6.1.jar; then
+              echo "创建空的wrapper jar作为占位符"
+              touch android/gradle/wrapper/gradle-wrapper.jar
+            fi
+          fi
+          
+          # 创建wrapper配置文件
+          cat > android/gradle/wrapper/gradle-wrapper.properties << EOF
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-7.6.1-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          
+          # 确保gradlew可执行
+          chmod +x android/gradlew
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: |
+          flutter pub get
+          flutter doctor -v
+
+      # 修改Android构建配置
+      - name: Configure Android build
+        run: |
+          # 修改build.gradle以使用国内镜像
+          cat > android/build.gradle << EOF
           buildscript {
               repositories {
+                  google()
+                  mavenCentral()
                   maven { url 'https://maven.aliyun.com/repository/google' }
                   maven { url 'https://maven.aliyun.com/repository/central' }
                   maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
@@ -122,6 +103,8 @@ jobs:
 
           allprojects {
               repositories {
+                  google()
+                  mavenCentral()
                   maven { url 'https://maven.aliyun.com/repository/google' }
                   maven { url 'https://maven.aliyun.com/repository/central' }
                   maven { url 'https://maven.aliyun.com/repository/public' }
@@ -141,100 +124,39 @@ jobs:
               delete rootProject.buildDir
           }
           EOF
-            mv build.gradle.new build.gradle
-          fi
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      # 使用Flutter直接构建，避免调用gradlew
-      - name: Build Debug APK
-        run: |
-          echo "直接使用Flutter命令构建APK"
           
-          # 配置离线模式和更多网络参数
-          mkdir -p android/app/src/main/assets
-          
-          # 修改android/gradle.properties文件，添加更多离线设置
-          cat >> android/gradle.properties << EOF
-          org.gradle.offline=true
+          # 添加gradle.properties配置
+          cat > android/gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx1536M
+          android.useAndroidX=true
           android.enableJetifier=true
           android.enableR8=true
-          org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -Dhttp.socketTimeout=180000 -Dhttp.connectionTimeout=180000
+          org.gradle.offline=true
+          android.defaults.buildfeatures.buildconfig=true
+          android.nonTransitiveRClass=false
+          android.nonFinalResIds=false
           EOF
-          
-          # 准备预下载的gradle
-          echo "准备Gradle Wrapper"
-          WRAPPER_DIR="android/gradle/wrapper"
-          mkdir -p $WRAPPER_DIR
-          
-          # 寻找已下载的gradle-wrapper.jar
-          echo "查找Gradle路径和文件..."
-          ls -la /home/runner/gradle-installations/installs/
-          ls -la /home/runner/gradle-installations/installs/gradle-7.6.1/ || echo "Gradle目录不存在"
-          find /home/runner/gradle-installations -name "gradle-wrapper*.jar" || echo "找不到wrapper jar"
-          
-          # 下载一个gradle-wrapper.jar作为备用
-          echo "下载gradle-wrapper.jar..."
-          curl -L -o $WRAPPER_DIR/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar
-          
-          # 确认下载成功
-          if [ -f "$WRAPPER_DIR/gradle-wrapper.jar" ]; then
-            echo "成功获取gradle-wrapper.jar"
-          else
-            echo "无法获取gradle-wrapper.jar，尝试备用方案"
-            # 创建一个空的jar文件作为占位符
-            touch $WRAPPER_DIR/gradle-wrapper.jar
-          fi
-          
-          # 更新gradle-wrapper.properties文件，使用网络URL但配置本地缓存
-          echo "distributionBase=GRADLE_USER_HOME" > $WRAPPER_DIR/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
-          echo "distributionUrl=https://services.gradle.org/distributions/gradle-7.6.1-bin.zip" >> $WRAPPER_DIR/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> $WRAPPER_DIR/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> $WRAPPER_DIR/gradle-wrapper.properties
-          
-          # 修改build.gradle以使用完全静态的依赖
-          echo "修改app/build.gradle以减少依赖下载"
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:/\/\/implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:/g' android/app/build.gradle
-          fi
-          
-          # 尝试使用flutter命令构建，指定简单参数
-          echo "尝试构建APK..."
-          flutter build apk --debug --suppress-analytics
 
-      # 检查APK是否成功构建
-      - name: Check APK exists
-        id: check_apk
+      # 直接构建APK
+      - name: Build Debug APK
         run: |
-          if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
-            echo "APK文件已成功构建"
-            echo "apk_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "APK文件构建失败，尝试使用纯Gradle构建"
-            echo "apk_exists=false" >> $GITHUB_OUTPUT
-          fi
+          # 关闭分析以减少网络请求
+          flutter build apk --debug --no-pub --suppress-analytics
 
-      # 如果Flutter构建失败，尝试直接使用Gradle构建
-      - name: Fallback to direct Gradle build
-        if: steps.check_apk.outputs.apk_exists != 'true'
+      # 备用构建方法
+      - name: Fallback Build (if needed)
+        if: failure()
         run: |
           cd android
-          chmod +x ./gradlew
-          # 增加更多离线和网络问题处理选项
-          echo "org.gradle.offline=true" >> gradle.properties
-          echo "android.enableJetifier=true" >> gradle.properties
-          echo "android.enableR8=true" >> gradle.properties
-          # 指定使用本地Gradle，避免下载
-          export GRADLE_HOME=/home/runner/gradle-installations/installs/gradle-7.6.1
-          export PATH=$GRADLE_HOME/bin:$PATH
-          # 尝试使用本地gradle命令直接构建
-          gradle assembleDebug --offline --no-daemon --stacktrace
+          ./gradlew assembleDebug --offline --no-daemon --stacktrace
 
+      # 上传构建产物
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
           retention-days: 7
