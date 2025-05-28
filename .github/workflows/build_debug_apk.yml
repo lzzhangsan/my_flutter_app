@@ -45,14 +45,14 @@ jobs:
           mkdir -p android/gradle/wrapper
           
           # 下载gradle-wrapper.jar
-          curl -L --retry 5 --retry-delay 3 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.0.0/gradle/wrapper/gradle-wrapper.jar
+          curl -L --retry 5 --retry-delay 3 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.3.0/gradle/wrapper/gradle-wrapper.jar
           
           # 创建gradle-wrapper.properties
           echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
           echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
           echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
           echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
           
           # 创建gradlew脚本
           echo '#!/bin/sh' > android/gradlew
@@ -74,7 +74,7 @@ jobs:
           echo >> android/app/build.gradle
           echo 'android {' >> android/app/build.gradle
           echo '    namespace "com.example.change.copy"' >> android/app/build.gradle
-          echo '    compileSdkVersion 34' >> android/app/build.gradle
+          echo '    compileSdkVersion 35' >> android/app/build.gradle
           echo >> android/app/build.gradle
           echo '    compileOptions {' >> android/app/build.gradle
           echo '        sourceCompatibility JavaVersion.VERSION_17' >> android/app/build.gradle
@@ -92,7 +92,7 @@ jobs:
           echo '    defaultConfig {' >> android/app/build.gradle
           echo '        applicationId "com.example.change_copy"' >> android/app/build.gradle
           echo '        minSdkVersion 24' >> android/app/build.gradle
-          echo '        targetSdkVersion 34' >> android/app/build.gradle
+          echo '        targetSdkVersion 35' >> android/app/build.gradle
           echo '        versionCode 1' >> android/app/build.gradle
           echo '        versionName "1.0"' >> android/app/build.gradle
           echo '        multiDexEnabled true' >> android/app/build.gradle
@@ -109,7 +109,7 @@ jobs:
           echo '}' >> android/app/build.gradle
           echo >> android/app/build.gradle
           echo 'dependencies {' >> android/app/build.gradle
-          echo '    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0"' >> android/app/build.gradle
+          echo '    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.10"' >> android/app/build.gradle
           echo "    implementation 'com.google.android.material:material:1.9.0'" >> android/app/build.gradle
           echo "    implementation 'androidx.multidex:multidex:2.0.1'" >> android/app/build.gradle
           echo '}' >> android/app/build.gradle
@@ -135,11 +135,47 @@ jobs:
           echo >> android/settings.gradle
           echo 'plugins {' >> android/settings.gradle
           echo '    id "dev.flutter.flutter-plugin-loader" version "1.0.0"' >> android/settings.gradle
-          echo '    id "com.android.application" version "8.0.0" apply false' >> android/settings.gradle
-          echo '    id "org.jetbrains.kotlin.android" version "1.8.0" apply false' >> android/settings.gradle
+          echo '    id "com.android.application" version "8.3.0" apply false' >> android/settings.gradle
+          echo '    id "org.jetbrains.kotlin.android" version "1.8.10" apply false' >> android/settings.gradle
           echo '}' >> android/settings.gradle
           echo >> android/settings.gradle
           echo 'include ":app"' >> android/settings.gradle
+          
+          # 修改顶层build.gradle
+          echo 'buildscript {' > android/build.gradle
+          echo '    ext.kotlin_version = "1.8.10"' >> android/build.gradle
+          echo '    repositories {' >> android/build.gradle
+          echo '        google()' >> android/build.gradle
+          echo '        mavenCentral()' >> android/build.gradle
+          echo '        maven { url "https://maven.aliyun.com/repository/google" }' >> android/build.gradle
+          echo '        maven { url "https://maven.aliyun.com/repository/central" }' >> android/build.gradle
+          echo '    }' >> android/build.gradle
+          echo '    dependencies {' >> android/build.gradle
+          echo '        classpath "com.android.tools.build:gradle:8.3.0"' >> android/build.gradle
+          echo '        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"' >> android/build.gradle
+          echo '    }' >> android/build.gradle
+          echo '}' >> android/build.gradle
+          echo >> android/build.gradle
+          echo 'allprojects {' >> android/build.gradle
+          echo '    repositories {' >> android/build.gradle
+          echo '        google()' >> android/build.gradle
+          echo '        mavenCentral()' >> android/build.gradle
+          echo '        maven { url "https://maven.aliyun.com/repository/google" }' >> android/build.gradle
+          echo '        maven { url "https://maven.aliyun.com/repository/central" }' >> android/build.gradle
+          echo '    }' >> android/build.gradle
+          echo '}' >> android/build.gradle
+          echo >> android/build.gradle
+          echo 'rootProject.buildDir = "../build"' >> android/build.gradle
+          echo 'subprojects {' >> android/build.gradle
+          echo '    project.buildDir = "${rootProject.buildDir}/${project.name}"' >> android/build.gradle
+          echo '}' >> android/build.gradle
+          echo 'subprojects {' >> android/build.gradle
+          echo '    project.evaluationDependsOn(":app")' >> android/build.gradle
+          echo '}' >> android/build.gradle
+          echo >> android/build.gradle
+          echo 'tasks.register("clean", Delete) {' >> android/build.gradle
+          echo '    delete rootProject.buildDir' >> android/build.gradle
+          echo '}' >> android/build.gradle
           
           # 设置Flutter SDK路径
           echo "flutter.sdk=$(which flutter | xargs dirname | xargs dirname)" > android/local.properties
