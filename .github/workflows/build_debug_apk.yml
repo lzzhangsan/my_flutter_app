@@ -124,7 +124,45 @@ jobs:
       - name: Build Debug APK
         run: |
           echo "直接使用Flutter命令构建APK"
-          flutter build apk --debug
+          # 创建本地属性文件，使用离线模式
+          echo "org.gradle.offline=true" >> android/gradle.properties
+          # 增加重试和网络失败处理
+          for i in 1 2 3; do
+            if [ $i -gt 1 ]; then
+              echo "构建失败，尝试第 $i 次重试..."
+              sleep 10
+            fi
+            # 尝试使用--local-only参数，减少网络依赖
+            flutter build apk --debug --local-engine-host=host_release_arm64 && break
+          done
+
+      # 检查APK是否成功构建
+      - name: Check APK exists
+        id: check_apk
+        run: |
+          if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+            echo "APK文件已成功构建"
+            echo "apk_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "APK文件构建失败，尝试使用纯Gradle构建"
+            echo "apk_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 如果Flutter构建失败，尝试直接使用Gradle构建
+      - name: Fallback to direct Gradle build
+        if: steps.check_apk.outputs.apk_exists != 'true'
+        run: |
+          cd android
+          chmod +x ./gradlew
+          # 增加更多离线和网络问题处理选项
+          echo "org.gradle.offline=true" >> gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+          echo "android.enableR8=true" >> gradle.properties
+          # 指定使用本地Gradle，避免下载
+          export GRADLE_HOME=/home/runner/gradle-installations/installs/gradle-7.6.1
+          export PATH=$GRADLE_HOME/bin:$PATH
+          # 尝试使用本地gradle命令直接构建
+          gradle assembleDebug --offline --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
