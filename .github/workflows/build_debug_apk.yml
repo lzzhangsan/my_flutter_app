@@ -14,20 +14,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 添加更明确的缓存步骤，独立于setup-java
+      - name: Setup Gradle Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android/build-cache
+            ~/.android/avd
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: 'gradle'  # 启用Java的内置Gradle缓存
+          # 不使用内置缓存，我们已经有了专门的缓存步骤
+          cache: 'none'
 
       # 直接下载并安装Gradle，避免Gradle Wrapper的网络问题
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: '7.6.1'  # 使用特定版本的Gradle，避免auto值导致的错误
-          gradle-home-cache-cleanup: true  # 清理旧的缓存以节省空间
-          arguments: --stacktrace --info
+          gradle-version: '7.6.1'  # 使用特定版本的Gradle
+          # 禁用缓存清理，由我们自己的缓存步骤管理
+          gradle-home-cache-cleanup: false
+          # 只用于安装Gradle，不执行命令
+          arguments: ''
+
+      # 添加额外的Flutter缓存
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ${{ env.FLUTTER_HOME }}/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
 
       # 检查项目结构
       - name: Check project structure
@@ -57,7 +84,8 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true  # 启用Flutter缓存
+          # 使用内置缓存管理
+          cache: true
 
       # 配置网络参数
       - name: Configure network settings
@@ -151,7 +179,7 @@ jobs:
           echo "下载gradle-wrapper.jar..."
           curl -L -o $WRAPPER_DIR/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar
           
-          # 确认下载成���
+          # 确认下载成功
           if [ -f "$WRAPPER_DIR/gradle-wrapper.jar" ]; then
             echo "成功获取gradle-wrapper.jar"
           else
@@ -174,7 +202,7 @@ jobs:
           fi
           
           # 尝试使用flutter命令构建，指定简单参数
-          echo "尝试���建APK..."
+          echo "尝试构建APK..."
           flutter build apk --debug --suppress-analytics
 
       # 检查APK是否成功构建
