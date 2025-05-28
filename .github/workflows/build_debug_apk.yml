@@ -28,15 +28,65 @@ jobs:
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: ${{ runner.os }}-pub-
+          path: |
+            ~/.pub-cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+            ${{ runner.os }}-
+
+      # 配置Gradle网络参数，增加连接超时和重试
+      - name: Configure Gradle network settings
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" > ~/.gradle/gradle.properties
+          echo "org.gradle.daemon=false" >> ~/.gradle/gradle.properties
+          echo "org.gradle.parallel=true" >> ~/.gradle/gradle.properties
+          echo "org.gradle.configureondemand=true" >> ~/.gradle/gradle.properties
+          echo "org.gradle.caching=true" >> ~/.gradle/gradle.properties
+          echo "systemProp.https.protocols=TLSv1.2,TLSv1.3" >> ~/.gradle/gradle.properties
+          echo "systemProp.javax.net.ssl.trustStoreType=JKS" >> ~/.gradle/gradle.properties
+          echo "systemProp.http.connectionTimeout=60000" >> ~/.gradle/gradle.properties 
+          echo "systemProp.http.socketTimeout=60000" >> ~/.gradle/gradle.properties
+          echo "systemProp.http.connection.staleConnectionCheckEnabled=false" >> ~/.gradle/gradle.properties
 
       - name: Get dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          # 尝试3次，每次等待5秒
+          for i in 1 2 3; do
+            if [ $i -gt 1 ]; then
+              echo "Retry $i getting dependencies..."
+              sleep 5
+            fi
+            flutter pub get && break
+          done
 
-      - name: Build Debug APK
-        run: flutter build apk --debug
+      # 使用阿里云镜像替换Google Maven仓库
+      - name: Setup Gradle repositories
+        run: |
+          cd android
+          if [ -f build.gradle ]; then
+            sed -i 's|google()|maven { url "https://maven.aliyun.com/repository/google" }|g' build.gradle
+            sed -i 's|mavenCentral()|maven { url "https://maven.aliyun.com/repository/central" }|g' build.gradle
+          fi
+          if [ -f settings.gradle ]; then
+            sed -i 's|google()|maven { url "https://maven.aliyun.com/repository/google" }|g' settings.gradle
+            sed -i 's|mavenCentral()|maven { url "https://maven.aliyun.com/repository/central" }|g' settings.gradle
+          fi
+
+      - name: Build Debug APK with retry
+        run: |
+          # 尝试3次，每次等待5秒
+          for i in 1 2 3; do
+            if [ $i -gt 1 ]; then
+              echo "Retry $i building APK..."
+              sleep 5
+            fi
+            flutter build apk --debug && break
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
