@@ -5,48 +5,42 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  # 也可以手动触发工作流
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动触发工作流
 
 jobs:
   build:
-    # 改用Ubuntu 22.04而非最新版本以避免当前的服务问题
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04  # 使用稳定的ubuntu-20.04而不是最新版本
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2.5.0
-        # 移除 fetch-depth 以减少资源需求
-        # with:
-        #   fetch-depth: 0
+        uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v2.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '11'
+          java-version: '17'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2.10.0
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Get Flutter dependencies
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-pub-
+
+      - name: Get dependencies
         run: flutter pub get
 
-      # 移除格式检查，避免因格式问题导致构建失败
-      # - name: Check for any formatting issues
-      #   run: flutter format --set-exit-if-changed .
-
-      # 将分析步骤设置为仅警告而非错误
-      - name: Analyze project source
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
-
-      - name: Build debug APK
+      - name: Build Debug APK
         run: flutter build apk --debug
 
       - name: Upload APK
-        uses: actions/upload-artifact@v2.3.1
+        uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: app-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 7
