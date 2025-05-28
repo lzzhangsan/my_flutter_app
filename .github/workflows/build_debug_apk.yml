@@ -10,257 +10,66 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # 设置超时时间
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 设置Java环境
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 设置Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.32.0'  # 指定Flutter版���
           channel: 'stable'
-          cache: true
 
-      # 显示环境信息
-      - name: Show environment info
-        run: |
-          flutter --version
-          java -version
-          echo "JAVA_HOME: $JAVA_HOME"
-          flutter doctor -v
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-pub-
 
-      # 确保资源目录存在
+      # 确保assets/media目录存在
       - name: Ensure assets directories exist
         run: |
           mkdir -p assets/media
           touch assets/media/.gitkeep
-          ls -la assets/
-          ls -la assets/media/
-
-      # 修复Gradle和Flutter插件配置
-      - name: Fix Gradle and Flutter plugin configuration
-        run: |
-          # 准备Gradle目录
-          mkdir -p android/gradle/wrapper
-          
-          # 下载gradle-wrapper.jar
-          curl -L --retry 5 --retry-delay 3 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.3.0/gradle/wrapper/gradle-wrapper.jar
-          
-          # 创建gradle-wrapper.properties
-          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
-          
-          # 创建gradlew脚本
-          echo '#!/bin/sh' > android/gradlew
-          echo 'exec gradle "$@"' >> android/gradlew
-          chmod +x android/gradlew
-          
-          # 修复gradle.properties文件 - 增加内存配置
-          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" > android/gradle.properties
-          echo "android.useAndroidX=true" >> android/gradle.properties
-          echo "android.enableJetifier=true" >> android/gradle.properties
-          echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
-          echo "org.gradle.daemon=false" >> android/gradle.properties
-          echo "android.disableAutomaticComponentCreation=true" >> android/gradle.properties
-          
-          # 修复app/build.gradle文件
-          echo 'plugins {' > android/app/build.gradle
-          echo "    id 'com.android.application'" >> android/app/build.gradle
-          echo "    id 'kotlin-android'" >> android/app/build.gradle
-          echo "    id 'dev.flutter.flutter-gradle-plugin'" >> android/app/build.gradle
-          echo '}' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo 'android {' >> android/app/build.gradle
-          echo '    namespace "com.example.change.copy"' >> android/app/build.gradle
-          echo '    compileSdkVersion 35' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo '    compileOptions {' >> android/app/build.gradle
-          echo '        sourceCompatibility JavaVersion.VERSION_17' >> android/app/build.gradle
-          echo '        targetCompatibility JavaVersion.VERSION_17' >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo '    kotlinOptions {' >> android/app/build.gradle
-          echo "        jvmTarget = '17'" >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo '    sourceSets {' >> android/app/build.gradle
-          echo "        main.java.srcDirs += 'src/main/kotlin'" >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo '    defaultConfig {' >> android/app/build.gradle
-          echo '        applicationId "com.example.change_copy"' >> android/app/build.gradle
-          echo '        minSdkVersion 24' >> android/app/build.gradle
-          echo '        targetSdkVersion 35' >> android/app/build.gradle
-          echo '        versionCode 1' >> android/app/build.gradle
-          echo '        versionName "1.0"' >> android/app/build.gradle
-          echo '        multiDexEnabled true' >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo '    buildTypes {' >> android/app/build.gradle
-          echo '        release {' >> android/app/build.gradle
-          echo '            signingConfig signingConfigs.debug' >> android/app/build.gradle
-          echo '            minifyEnabled false' >> android/app/build.gradle
-          echo '            shrinkResources false' >> android/app/build.gradle
-          echo "            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'" >> android/app/build.gradle
-          echo '        }' >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo '    aaptOptions {' >> android/app/build.gradle
-          echo '        noCompress "tflite"' >> android/app/build.gradle
-          echo '    }' >> android/app/build.gradle
-          echo '}' >> android/app/build.gradle
-          echo >> android/app/build.gradle
-          echo 'dependencies {' >> android/app/build.gradle
-          echo '    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.10"' >> android/app/build.gradle
-          echo "    implementation 'com.google.android.material:material:1.9.0'" >> android/app/build.gradle
-          echo "    implementation 'androidx.multidex:multidex:2.0.1'" >> android/app/build.gradle
-          echo '}' >> android/app/build.gradle
-          
-          # 创建settings.gradle文件
-          echo 'pluginManagement {' > android/settings.gradle
-          echo '    def flutterSdkPath = {' >> android/settings.gradle
-          echo '        def properties = new Properties()' >> android/settings.gradle
-          echo '        file("local.properties").withInputStream { properties.load(it) }' >> android/settings.gradle
-          echo '        def flutterSdkPath = properties.getProperty("flutter.sdk")' >> android/settings.gradle
-          echo '        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"' >> android/settings.gradle
-          echo '        return flutterSdkPath' >> android/settings.gradle
-          echo '    }()' >> android/settings.gradle
-          echo >> android/settings.gradle
-          echo '    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")' >> android/settings.gradle
-          echo >> android/settings.gradle
-          echo '    repositories {' >> android/settings.gradle
-          echo '        google()' >> android/settings.gradle
-          echo '        mavenCentral()' >> android/settings.gradle
-          echo '        gradlePluginPortal()' >> android/settings.gradle
-          echo '    }' >> android/settings.gradle
-          echo '}' >> android/settings.gradle
-          echo >> android/settings.gradle
-          echo 'plugins {' >> android/settings.gradle
-          echo '    id "dev.flutter.flutter-plugin-loader" version "1.0.0"' >> android/settings.gradle
-          echo '    id "com.android.application" version "8.3.0" apply false' >> android/settings.gradle
-          echo '    id "org.jetbrains.kotlin.android" version "1.8.10" apply false' >> android/settings.gradle
-          echo '}' >> android/settings.gradle
-          echo >> android/settings.gradle
-          echo 'include ":app"' >> android/settings.gradle
-          
-          # 修改顶层build.gradle
-          echo 'buildscript {' > android/build.gradle
-          echo '    ext.kotlin_version = "1.8.10"' >> android/build.gradle
-          echo '    repositories {' >> android/build.gradle
-          echo '        google()' >> android/build.gradle
-          echo '        mavenCentral()' >> android/build.gradle
-          echo '        maven { url "https://maven.aliyun.com/repository/google" }' >> android/build.gradle
-          echo '        maven { url "https://maven.aliyun.com/repository/central" }' >> android/build.gradle
-          echo '    }' >> android/build.gradle
-          echo '    dependencies {' >> android/build.gradle
-          echo '        classpath "com.android.tools.build:gradle:8.3.0"' >> android/build.gradle
-          echo '        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"' >> android/build.gradle
-          echo '    }' >> android/build.gradle
-          echo '}' >> android/build.gradle
-          echo >> android/build.gradle
-          echo 'allprojects {' >> android/build.gradle
-          echo '    repositories {' >> android/build.gradle
-          echo '        google()' >> android/build.gradle
-          echo '        mavenCentral()' >> android/build.gradle
-          echo '        maven { url "https://maven.aliyun.com/repository/google" }' >> android/build.gradle
-          echo '        maven { url "https://maven.aliyun.com/repository/central" }' >> android/build.gradle
-          echo '    }' >> android/build.gradle
-          echo '}' >> android/build.gradle
-          echo >> android/build.gradle
-          echo 'rootProject.buildDir = "../build"' >> android/build.gradle
-          echo 'subprojects {' >> android/build.gradle
-          echo '    project.buildDir = "${rootProject.buildDir}/${project.name}"' >> android/build.gradle
-          echo '    project.evaluationDependsOn(":app")' >> android/build.gradle
-          echo >> android/build.gradle
-          echo '    afterEvaluate { project ->' >> android/build.gradle
-          echo '        if (project.hasProperty("android")) {' >> android/build.gradle
-          echo '            android {' >> android/build.gradle
-          echo '                compileOptions {' >> android/build.gradle
-          echo '                    sourceCompatibility JavaVersion.VERSION_17' >> android/build.gradle
-          echo '                    targetCompatibility JavaVersion.VERSION_17' >> android/build.gradle
-          echo '                }' >> android/build.gradle
-          echo '            }' >> android/build.gradle
-          echo '        }' >> android/build.gradle
-          echo '    }' >> android/build.gradle
-          echo '}' >> android/build.gradle
-          echo >> android/build.gradle
-          echo 'tasks.register("clean", Delete) {' >> android/build.gradle
-          echo '    delete rootProject.buildDir' >> android/build.gradle
-          echo '}' >> android/build.gradle
-          
-          # 设置Flutter SDK路径
-          echo "flutter.sdk=$(which flutter | xargs dirname | xargs dirname)" > android/local.properties
-          
-          # 应用补丁文件
-          mkdir -p android/app/src/main/assets
-          if [ -d "patches" ]; then
-            echo "应用补丁文件:"
-            ls -la patches
-            cp -r patches/* android/
-          fi
-          
-          echo "Gradle和Flutter插件配置修复完成"
-
-      # 修改pubspec.yaml确保媒体资源目录正确
-      - name: Fix pubspec.yaml media assets
-        run: |
-          # 确保assets/media目录存在
-          mkdir -p assets/media
-          
-          # 添加一个空文件确保目录不为空
-          touch assets/media/.gitkeep
-          
-          # 更新pubspec.yaml
-          sed -i 's/- assets\/media\//- assets\/media/g' pubspec.yaml
-          cat pubspec.yaml
 
       # 获取Flutter依赖
       - name: Get dependencies
         run: flutter pub get
 
+      # 更新Android Gradle插件版本
+      - name: Update Android Gradle Plugin
+        run: |
+          cd android
+          sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.3.0/g' build.gradle
+          
+          # 增加Java堆内存以解决OOM问题
+          cat > gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.nonTransitiveRClass=false
+          android.nonFinalResIds=false
+          EOF
+
       # 构建Debug APK
       - name: Build Debug APK
         run: |
-          echo "开始构建Debug APK..."
-          # 使用离线模式并增加Java内存
-          export GRADLE_OPTS="-Xmx4g -XX:MaxPermSize=512m -Dorg.gradle.jvmargs=-Xmx4g"
-          flutter build apk --debug --no-android-gradle-daemon --suppress-analytics --android-skip-build-dependency-validation
-          
-          # 检查APK是否生成
-          if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
-            echo "APK构建成功: build/app/outputs/flutter-apk/app-debug.apk"
-            ls -la build/app/outputs/flutter-apk/
-          else
-            echo "尝试使用备用方法..."
-            cd android
-            
-            # 修改JVM参数以增加Gradle的堆内存
-            export JAVA_OPTS="-Xmx4g"
-            export GRADLE_OPTS="-Xmx4g -XX:MaxPermSize=512m -Dorg.gradle.jvmargs=-Xmx4g"
-            
-            # 使用离线模式和无守护进程构建
-            ./gradlew -Dorg.gradle.java.home=$JAVA_HOME assembleDebug --offline --no-daemon --info
-          fi
+          # 设置更大的Java堆内存
+          export GRADLE_OPTS="-Xmx4g -Dorg.gradle.jvmargs=-Xmx4g"
+          flutter build apk --debug --android-skip-build-dependency-validation
 
       # 上传APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: |
-            build/app/outputs/flutter-apk/app-debug.apk
-            build/app/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
+          path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 7
 
