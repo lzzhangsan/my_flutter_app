@@ -124,7 +124,7 @@ jobs:
       - name: Build Debug APK
         run: |
           echo "直接使用Flutter命令构建APK"
-          flutter build apk --debug --stacktrace
+          flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
