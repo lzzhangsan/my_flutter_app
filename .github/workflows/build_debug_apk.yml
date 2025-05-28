@@ -25,44 +25,25 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 7.6.1  # 使用稳定版本的Gradle
+          gradle-version: auto  # 使用项目中已指定的Gradle版本
+          gradle-home-cache-cleanup: true  # 清理旧的缓存以节省空间
           arguments: --stacktrace --info
 
-      # 检查项目结构并准备Gradle Wrapper
-      - name: Check project structure and prepare Gradle wrapper
+      # 检查项目结构
+      - name: Check project structure
         run: |
           echo "列出项目结构:"
           ls -la
           echo "列出android目录结构:"
           ls -la android/
           echo "列出android/gradle目录结构:"
-          if [ -d "android/gradle" ]; then
-            ls -la android/gradle/
-          else
-            echo "Creating android/gradle directory"
-            mkdir -p android/gradle/wrapper
-          fi
-          
-          # 确保wrapper目录存在
-          mkdir -p android/gradle/wrapper
-          
-          # 下载gradle-wrapper.jar到项目目录
-          curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar
-          
-          # 更新gradle-wrapper.properties以使用本地缓存
-          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.6.1-bin.zip" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          
-          # 创建gradlew脚本
-          echo '#!/usr/bin/env sh' > android/gradlew
-          echo 'exec gradle "$@"' >> android/gradlew
+          ls -la android/gradle/wrapper/
+          echo "gradle-wrapper.properties内容:"
+          cat android/gradle/wrapper/gradle-wrapper.properties
+          echo "设置gradlew为可执行:"
           chmod +x android/gradlew
-          
-          echo "创建的gradlew文件内容:"
-          cat android/gradlew
+          echo "验证gradlew可执行:"
+          android/gradlew --version
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
