@@ -16,19 +16,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: List project structure
-        run: |
-          echo "查看项目结构"
-          ls -la
-          echo "Android目录内容:"
-          ls -la android || echo "android目录不存在"
-          echo "查看是否存在gradlew:"
-          if [ -f "android/gradlew" ]; then
-            echo "gradlew存在"
-          else
-            echo "gradlew不存在，需要创建"
-          fi
-
       # 设置Java环境
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -48,57 +35,39 @@ jobs:
         run: |
           flutter --version
           java -version
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "检查Android SDK是否可用:"
+          echo "JAVA_HOME: $JAVA_HOME"
           flutter doctor -v
 
-      # 准备Gradle环境
-      - name: Prepare Gradle environment
+      # 修复Java Home和Gradle设置
+      - name: Fix Java Home and Gradle settings
         run: |
-          # 确保gradle wrapper目录存在
+          # 准备Gradle目录
           mkdir -p android/gradle/wrapper
           
-          # 创建gradle-wrapper.properties
-          cat > android/gradle/wrapper/gradle-wrapper.properties << EOF
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-all.zip
-          EOF
-          
           # 下载gradle-wrapper.jar
-          curl -L --retry 5 --retry-delay 3 --connect-timeout 60 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.0.0/gradle/wrapper/gradle-wrapper.jar
+          curl -L --retry 5 --retry-delay 3 -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.0.0/gradle/wrapper/gradle-wrapper.jar
+          
+          # 创建gradle-wrapper.properties
+          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
           
           # 创建简化版本的gradlew脚本
-          cat > android/gradlew << 'EOF'
-          #!/bin/sh
-          exec gradle "$@"
-          EOF
-          
-          # 设置执行权限
+          echo '#!/bin/sh' > android/gradlew
+          echo 'exec gradle "$@"' >> android/gradlew
           chmod +x android/gradlew
           
+          # 修复gradle.properties文件
+          echo "org.gradle.jvmargs=-Xmx1536M" > android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
+          echo "android.enableJetifier=true" >> android/gradle.properties
+          echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
+          
+          # 显示文件和目录
           echo "Gradle环境准备完成"
           ls -la android/gradle/wrapper
-          
-          # 修正gradle.properties中的Java home路径
-          if [ -f "android/gradle.properties" ]; then
-            # 删除Windows路径的Java home设置
-            sed -i '/org.gradle.java.home=/d' android/gradle.properties
-            # 添加正确的Java home
-            echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
-          else
-            # 创建新的gradle.properties
-            cat > android/gradle.properties << EOF
-            org.gradle.jvmargs=-Xmx1536M
-            android.useAndroidX=true
-            android.enableJetifier=true
-            org.gradle.java.home=$JAVA_HOME
-            EOF
-          fi
-          
-          echo "更新后的gradle.properties内容:"
           cat android/gradle.properties
 
       # 修复Android配置
@@ -108,32 +77,27 @@ jobs:
           sed -i 's/compileSdkVersion 35/compileSdkVersion 34/g' android/app/build.gradle
           sed -i 's/targetSdkVersion 35/targetSdkVersion 34/g' android/app/build.gradle
           
-          # 确保本地Gradle properties存在并设置正��的Flutter SDK路径
-          cat > android/local.properties << EOF
-          flutter.sdk=$(which flutter | xargs dirname | xargs dirname)
-          EOF
+          # 设置Flutter SDK路径
+          echo "flutter.sdk=$(which flutter | xargs dirname | xargs dirname)" > android/local.properties
           
-          # 确保补丁目录和文件存在
+          # 准备assets目录
           mkdir -p android/app/src/main/assets
+          
+          # 应用补丁文件
           if [ -d "patches" ]; then
             echo "应用补丁文件:"
             ls -la patches
             cp -r patches/* android/
-            echo "补丁文件已复制到android目录"
-          else
-            echo "patches目录不存在"
           fi
 
-      # 获取Flutter依赖
+      # 获取Flutter依��
       - name: Get dependencies
-        run: |
-          flutter pub get
+        run: flutter pub get
 
       # 构建Debug APK
       - name: Build Debug APK
         run: |
           echo "开始构建Debug APK..."
-          # 使用--no-android-gradle-daemon避免Gradle守护进程问题
           flutter build apk --debug --no-android-gradle-daemon --suppress-analytics
           
           # 检查APK是否生成
@@ -141,18 +105,9 @@ jobs:
             echo "APK构建成功: build/app/outputs/flutter-apk/app-debug.apk"
             ls -la build/app/outputs/flutter-apk/
           else
-            echo "Flutter构建失败，尝试使用Gradle直接构建"
+            echo "Flutter构建失败，尝试直接使用Gradle"
             cd android
-            # 传递JAVA_HOME环境变量给Gradle
             ./gradlew -Dorg.gradle.java.home=$JAVA_HOME assembleDebug --info
-            
-            if [ -f "../build/app/outputs/apk/debug/app-debug.apk" ]; then
-              echo "Gradle构建成功: build/app/outputs/apk/debug/app-debug.apk"
-              ls -la ../build/app/outputs/apk/debug/
-            else
-              echo "Gradle构建也失败了"
-              exit 1
-            fi
           fi
 
       # 上传APK
@@ -166,15 +121,3 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # 保存构建日志
-      - name: Save build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            android/app/build/reports/
-            android/build/reports/
-            ~/.gradle/daemon/*/daemon-*.out.log
-          if-no-files-found: warn
-          retention-days: 3
