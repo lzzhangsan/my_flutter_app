@@ -25,7 +25,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: auto  # 使用项目中已指定的Gradle版本
+          gradle-version: '7.6.1'  # 使用特定版本的Gradle，避免auto值导致的错误
           gradle-home-cache-cleanup: true  # 清理旧的缓存以节省空间
           arguments: --stacktrace --info
 
@@ -36,14 +36,22 @@ jobs:
           ls -la
           echo "列出android目录结构:"
           ls -la android/
-          echo "列出android/gradle目录结构:"
-          ls -la android/gradle/wrapper/
-          echo "gradle-wrapper.properties内容:"
-          cat android/gradle/wrapper/gradle-wrapper.properties
-          echo "设置gradlew为可执行:"
-          chmod +x android/gradlew
-          echo "验证gradlew可执行:"
-          android/gradlew --version
+          if [ -d "android/gradle/wrapper" ]; then
+            echo "列出android/gradle目录结构:"
+            ls -la android/gradle/wrapper/
+            echo "gradle-wrapper.properties内容:"
+            cat android/gradle/wrapper/gradle-wrapper.properties
+          else
+            echo "android/gradle/wrapper 目录不存在"
+          fi
+          
+          # 确保gradlew可执行
+          if [ -f "android/gradlew" ]; then
+            echo "设置gradlew为可执行:"
+            chmod +x android/gradlew
+          else
+            echo "android/gradlew 文件不存在"
+          fi
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
