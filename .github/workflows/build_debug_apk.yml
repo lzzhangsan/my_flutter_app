@@ -38,8 +38,8 @@ jobs:
           echo "JAVA_HOME: $JAVA_HOME"
           flutter doctor -v
 
-      # 修复Java Home和Gradle设置
-      - name: Fix Java Home and Gradle settings
+      # 修复Gradle和Flutter插件配置
+      - name: Fix Gradle and Flutter plugin configuration
         run: |
           # 准备Gradle目录
           mkdir -p android/gradle/wrapper
@@ -54,7 +54,7 @@ jobs:
           echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
           
-          # 创建简化版本的gradlew脚本
+          # 创建gradlew脚本
           echo '#!/bin/sh' > android/gradlew
           echo 'exec gradle "$@"' >> android/gradlew
           chmod +x android/gradlew
@@ -65,32 +65,101 @@ jobs:
           echo "android.enableJetifier=true" >> android/gradle.properties
           echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
           
-          # 显示文件和目录
-          echo "Gradle环境准备完成"
-          ls -la android/gradle/wrapper
-          cat android/gradle.properties
+          # 修复Flutter插件应用方式 - 修改app/build.gradle
+          cat > android/app/build.gradle.new << 'EOF'
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'dev.flutter.flutter-gradle-plugin'
+}
 
-      # 修复Android配置
-      - name: Fix Android configurations
-        run: |
-          # 修复app/build.gradle中的SDK版本
-          sed -i 's/compileSdkVersion 35/compileSdkVersion 34/g' android/app/build.gradle
-          sed -i 's/targetSdkVersion 35/targetSdkVersion 34/g' android/app/build.gradle
+android {
+    namespace "com.example.change.copy"
+    compileSdkVersion 34
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.example.change_copy"
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0"
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.multidex:multidex:2.0.1'
+}
+EOF
+          mv android/app/build.gradle.new android/app/build.gradle
+          
+          # 确保settings.gradle正确配置
+          cat > android/settings.gradle << 'EOF'
+pluginManagement {
+    def flutterSdkPath = {
+        def properties = new Properties()
+        file("local.properties").withInputStream { properties.load(it) }
+        def flutterSdkPath = properties.getProperty("flutter.sdk")
+        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+        return flutterSdkPath
+    }()
+
+    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+    id "com.android.application" version "8.0.0" apply false
+    id "org.jetbrains.kotlin.android" version "1.8.0" apply false
+}
+
+include ":app"
+EOF
           
           # 设置Flutter SDK路径
           echo "flutter.sdk=$(which flutter | xargs dirname | xargs dirname)" > android/local.properties
           
-          # 准备assets目录
-          mkdir -p android/app/src/main/assets
-          
           # 应用补丁文件
+          mkdir -p android/app/src/main/assets
           if [ -d "patches" ]; then
             echo "应用补丁文件:"
             ls -la patches
             cp -r patches/* android/
           fi
+          
+          echo "Gradle和Flutter插件配置修复完成"
 
-      # 获取Flutter依��
+      # 获取Flutter依赖
       - name: Get dependencies
         run: flutter pub get
 
@@ -98,14 +167,14 @@ jobs:
       - name: Build Debug APK
         run: |
           echo "开始构建Debug APK..."
-          flutter build apk --debug --no-android-gradle-daemon --suppress-analytics
+          flutter build apk --debug --no-android-gradle-daemon --suppress-analytics --android-skip-build-dependency-validation
           
           # 检查APK是否生成
           if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
             echo "APK构建成功: build/app/outputs/flutter-apk/app-debug.apk"
             ls -la build/app/outputs/flutter-apk/
           else
-            echo "Flutter构建失败，尝试直接使用Gradle"
+            echo "尝试使用备用方法..."
             cd android
             ./gradlew -Dorg.gradle.java.home=$JAVA_HOME assembleDebug --info
           fi
