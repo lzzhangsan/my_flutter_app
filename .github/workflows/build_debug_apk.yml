@@ -1,9 +1,11 @@
-          cd android
-          # 首先尝试下载依赖
-          ./gradlew --refresh-dependencies --stacktrace
-          cd ..
-          # 使用--stacktrace参数获取详细错误信息
-          flutter build apk --debug --stacktrace
+name: Build Debug APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发工作流
 
 jobs:
   build:
@@ -111,14 +113,12 @@ jobs:
       # 使用--offline模式构建，避免网络请求
       - name: Build Debug APK
         run: |
-          # 尝试3次，每次等待5秒
-          for i in 1 2 3; do
-            if [ $i -gt 1 ]; then
-              echo "Retry $i building APK..."
-              sleep 5
-            fi
-            flutter build apk --debug && break
-          done
+          cd android
+          # 首先尝试下载依赖
+          ./gradlew --refresh-dependencies --stacktrace
+          cd ..
+          # 使用--stacktrace参数获取详细错误信息
+          flutter build apk --debug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
