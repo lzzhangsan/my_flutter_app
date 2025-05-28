@@ -32,8 +32,7 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          # 不使用内置缓存，我们已经有了专门的缓存步骤
-          cache: 'none'
+          # 不设置缓存类型，避免使用无效值 'none'
 
       # 直接下载并安装Gradle，避免Gradle Wrapper的网络问题
       - name: Setup Gradle
