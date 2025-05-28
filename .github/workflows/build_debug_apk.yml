@@ -14,21 +14,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+        # 移除 fetch-depth 以减少资源需求
+        # with:
+        #   fetch-depth: 0
 
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '11'
-          cache: 'gradle'
+          # 暂时移除缓存以加快分配
+          # cache: 'gradle'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
+          # 暂时移除缓存以加快分配
+          # cache: true
 
       - name: Get Flutter dependencies
         run: flutter pub get
