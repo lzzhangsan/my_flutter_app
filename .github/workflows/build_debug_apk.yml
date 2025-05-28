@@ -1,15 +1,13 @@
-name: Build Debug APK
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # 允许手动触发工作流
+          cd android
+          # 首先尝试下载依赖
+          ./gradlew --refresh-dependencies --stacktrace
+          cd ..
+          # 使用--stacktrace参数获取详细错误信息
+          flutter build apk --debug --stacktrace
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 更新为当前支持的Ubuntu 22.04版本
+    runs-on: ubuntu-22.04  # 使用稳定的ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,72 +17,99 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+          cache: 'gradle'  # 启用Java的内置Gradle缓存
+
+      # 直接下载并安装Gradle，避免Gradle Wrapper的网络问题
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 7.6.1  # 使用稳定版本的Gradle
+          arguments: --stacktrace --info
+
+      # 手动下载gradle-wrapper.jar和gradle分发包，避免自动下载失败
+      - name: Prepare Gradle wrapper
+        run: |
+          mkdir -p ~/.gradle/wrapper/dists
+          # 下载gradle-wrapper.jar到项目目录
+          curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.1/gradle/wrapper/gradle-wrapper.jar
+          # 更新gradle-wrapper.properties以使用本地缓存
+          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.6.1-bin.zip" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          # 将gradlew设为可执行
+          chmod +x android/gradlew
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true  # 启用Flutter缓存
 
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-deps-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/*.gradle*') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-            ${{ runner.os }}-
-
-      # 配置Gradle网络参数，增加连接超时和重试
-      - name: Configure Gradle network settings
+      # 配置网络参数
+      - name: Configure network settings
         run: |
           mkdir -p ~/.gradle
-          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" > ~/.gradle/gradle.properties
-          echo "org.gradle.daemon=false" >> ~/.gradle/gradle.properties
-          echo "org.gradle.parallel=true" >> ~/.gradle/gradle.properties
-          echo "org.gradle.configureondemand=true" >> ~/.gradle/gradle.properties
-          echo "org.gradle.caching=true" >> ~/.gradle/gradle.properties
-          echo "systemProp.https.protocols=TLSv1.2,TLSv1.3" >> ~/.gradle/gradle.properties
-          echo "systemProp.javax.net.ssl.trustStoreType=JKS" >> ~/.gradle/gradle.properties
-          echo "systemProp.http.connectionTimeout=120000" >> ~/.gradle/gradle.properties 
-          echo "systemProp.http.socketTimeout=120000" >> ~/.gradle/gradle.properties
-          echo "systemProp.http.connection.staleConnectionCheckEnabled=false" >> ~/.gradle/gradle.properties
-          # 添加更多网络相关参数
-          echo "systemProp.http.nonProxyHosts=localhost|127.0.0.1" >> ~/.gradle/gradle.properties
-          echo "systemProp.http.keepAlive=false" >> ~/.gradle/gradle.properties
-          echo "systemProp.http.maxConnections=10" >> ~/.gradle/gradle.properties
-          echo "systemProp.http.connectionsPerRoute=2" >> ~/.gradle/gradle.properties
-          # 禁用Gradle守护进程减少网络使用
-          echo "org.gradle.daemon=false" >> ~/.gradle/gradle.properties
+          cat > ~/.gradle/gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx4g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          systemProp.https.protocols=TLSv1.2,TLSv1.3
+          systemProp.http.connectionTimeout=180000
+          systemProp.http.socketTimeout=180000
+          systemProp.http.keepAlive=false
+          EOF
 
-      - name: Get dependencies
-        run: |
-          flutter pub get
-          # 尝试3次，每次等待5秒
-          for i in 1 2 3; do
-            if [ $i -gt 1 ]; then
-              echo "Retry $i getting dependencies..."
-              sleep 5
-            fi
-            flutter pub get && break
-          done
-
-      # 使用阿里云镜像替换Google Maven仓库
+      # 修改build.gradle以使用镜像仓库
       - name: Setup Gradle repositories
         run: |
           cd android
+          # 修改项目级build.gradle
           if [ -f build.gradle ]; then
-            sed -i 's|google()|maven { url "https://maven.aliyun.com/repository/google" }|g' build.gradle
-            sed -i 's|mavenCentral()|maven { url "https://maven.aliyun.com/repository/central" }|g' build.gradle
-          fi
-          if [ -f settings.gradle ]; then
-            sed -i 's|google()|maven { url "https://maven.aliyun.com/repository/google" }|g' settings.gradle
-            sed -i 's|mavenCentral()|maven { url "https://maven.aliyun.com/repository/central" }|g' settings.gradle
+            cat > build.gradle.new << EOF
+          buildscript {
+              repositories {
+                  maven { url 'https://maven.aliyun.com/repository/google' }
+                  maven { url 'https://maven.aliyun.com/repository/central' }
+                  maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.2.0'
+                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.6.21'
+              }
+          }
+
+          allprojects {
+              repositories {
+                  maven { url 'https://maven.aliyun.com/repository/google' }
+                  maven { url 'https://maven.aliyun.com/repository/central' }
+                  maven { url 'https://maven.aliyun.com/repository/public' }
+                  maven { url 'https://jitpack.io' }
+              }
+          }
+
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+
+          tasks.register("clean", Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+            mv build.gradle.new build.gradle
           fi
 
-      - name: Build Debug APK with retry
+      - name: Get dependencies
+        run: flutter pub get
+
+      # 使用--offline模式构建，避免网络请求
+      - name: Build Debug APK
         run: |
           # 尝试3次，每次等待5秒
           for i in 1 2 3; do
