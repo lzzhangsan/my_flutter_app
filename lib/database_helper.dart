@@ -646,6 +646,8 @@ class DatabaseHelper {
   }
 
   Future<void> saveTextBoxes(List<Map<String, dynamic>> textBoxes, String documentName) async {
+    // Work on a snapshot to avoid concurrent modifications
+    final List<Map<String, dynamic>> snapshot = List<Map<String, dynamic>>.from(textBoxes);
     final db = await database;
 
     await db.transaction((txn) async {
@@ -656,7 +658,7 @@ class DatabaseHelper {
           whereArgs: [documentName],
         );
 
-        for (var textBox in textBoxes) {
+        for (var textBox in snapshot) {
           if (validateTextBoxData(textBox)) {
             await txn.insert(
               'text_boxes',
@@ -673,7 +675,7 @@ class DatabaseHelper {
       }
     });
 
-    print('成功保存了 ${textBoxes.length} 个文本框到文档 $documentName');
+    print('成功保存了 ${snapshot.length} 个文本框到文档 $documentName');
   }
 
   Future<void> insertOrUpdateImageBox(Map<String, dynamic> imageBox) async {
@@ -2297,7 +2299,7 @@ class DatabaseHelper {
         }
       });
 
-      print('成功保存了 ${audioBoxes.length} 个音频框到文档 $documentName');
+      print('成功保存�� ${audioBoxes.length} 个音频框到文档 $documentName');
     } catch (e) {
       print('保存音频框时出错: $e');
       throw e;
@@ -2598,7 +2600,7 @@ class DatabaseHelper {
             await imageFile.copy('$tempDirPath/$relativePath');
             print('已导出目录背景图片: $relativePath');
           } else {
-            print('警告：目录背景图片不存在: $backgroundImagePath');
+            print('警告：目录��景图片不存在: $backgroundImagePath');
           }
         }
         directorySettingsToExport.add(settingsCopy);
@@ -2816,8 +2818,9 @@ class DatabaseHelper {
       print('所有数据导入完成');
     } catch (e) {
       print('导入目录数据时出错: $e');
-      print('错误堆栈: ${StackTrace.current}');
+      print('错误堆��: ${StackTrace.current}');
       rethrow;
     }
   }
 }
+
