@@ -526,13 +526,6 @@ class _DirectoryPageState extends State<DirectoryPage> with WidgetsBindingObserv
       });
 
       _loadData();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('已打开文件夹: $folderName'),
-          duration: Duration(seconds: 1),
-        ),
-      );
     }
   }
 
@@ -2081,3 +2074,4 @@ class DirectoryItem {
 }
 
 enum ItemType { folder, document }
+
