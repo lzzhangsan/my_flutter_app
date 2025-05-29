@@ -1,4 +1,4 @@
-name: Flutter Build Debug APK
+name: Flutter Build Release APK
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'  # 指定Flutter版���
+          flutter-version: '3.32.0'  # 指定Flutter版本
           channel: 'stable'
 
       - name: Cache Flutter dependencies
@@ -58,18 +58,17 @@ jobs:
           android.nonFinalResIds=false
           EOF
 
-      # 构建Debug APK
-      - name: Build Debug APK
+      # 构建Release APK
+      - name: Build Release APK
         run: |
           # 设置更大的Java堆内存
           export GRADLE_OPTS="-Xmx4g -Dorg.gradle.jvmargs=-Xmx4g"
-          flutter build apk --debug --android-skip-build-dependency-validation
+          flutter build apk --release --no-shrink
 
       # 上传APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 7
-
