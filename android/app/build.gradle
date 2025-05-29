@@ -47,7 +47,7 @@ android {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10"  // 更新Kotlin版本
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.multidex:multidex:2.0.1'
     // Flutter 插件会自动管理其他依赖项
@@ -70,5 +70,3 @@ if (flutterRoot == null) {
     throw new Exception("Flutter SDK 未在 local.properties 中定义。请确保 local.properties 文件正确配置了 Flutter SDK 路径。")
 }
 
-// 应用 Flutter Gradle 脚本
-apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
