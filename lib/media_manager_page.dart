@@ -1,4 +1,12 @@
-﻿import 'dart:io';
+﻿      }
+
+      debugPrint('所有FFmpeg方法均失败');
+      return false;
+    } catch (e) {
+      debugPrint('使用 FFmpeg 提取视频帧时出错: $e');
+      return false;
+    }
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:async';
 import 'dart:ui' as ui;
@@ -564,6 +572,7 @@ class _MediaManagerPageState extends State<MediaManagerPage>
         debugPrint('删除媒体项时出错: $e');
         if (mounted) {
           ScaffoldMessenger.of(context)
+
               .showSnackBar(SnackBar(content: Text('删除媒体项时出错: $e')));
         }
       }
@@ -1447,8 +1456,115 @@ class _MediaManagerPageState extends State<MediaManagerPage>
   }
 
   Future<bool> _extractVideoFrameWithFFmpeg(String videoPath, String outputPath) async {
-    // 注释掉 _extractVideoFrameWithFFmpeg 方法的实现和所有调用，直接返回 false 或跳过。
-    return false;
+    try {
+      debugPrint('使用 FFmpeg 提取视频帧: $videoPath -> $outputPath');
+      final escapedVideoPath = videoPath.replaceAll('\\', '/');
+      final escapedOutputPath = outputPath.replaceAll('\\', '/');
+
+      // 创建临时目录，确保目标文件夹存在
+      final outputDir = File(outputPath).parent;
+      if (!await outputDir.exists()) {
+        await outputDir.create(recursive: true);
+      }
+
+      // 首先尝试视频序列的中间位置
+      try {
+        // 使用FFmpegKit执行命令获取视频时长
+        String probCommand = '-i "$escapedVideoPath" -show_entries format=duration -v quiet -of csv="p=0"';
+        final probeSession = await FFmpegKit.execute(probCommand);
+        final probeReturnCode = await probeSession.getReturnCode();
+
+        if (ReturnCode.isSuccess(probeReturnCode)) {
+          final output = await probeSession.getOutput();
+          if (output != null && output.isNotEmpty) {
+            final durationSeconds = double.tryParse(output.trim());
+            if (durationSeconds != null && durationSeconds > 0) {
+              // 提取视频中间位置的帧
+              int midPoint = 0;
+              if (durationSeconds > 10) {
+                // 对于长视频，尝试1/3位置
+                midPoint = (durationSeconds / 3).floor();
+              } else if (durationSeconds > 3) {
+                // 对于短视频，从第1秒位置选取
+                midPoint = 1;
+              } else {
+                // 非常短的视频，选第0秒
+                midPoint = 0;
+              }
+
+              // 优化的命令从视频中选取关键帧
+              String midPointCommand =
+                  '-ss $midPoint -i "$escapedVideoPath" -vframes 1 -c:v mjpeg -q:v 1 -vf "scale=320:-1" "$escapedOutputPath" -y';
+              final midPointSession = await FFmpegKit.execute(midPointCommand);
+              final midPointReturnCode = await midPointSession.getReturnCode();
+
+              if (ReturnCode.isSuccess(midPointReturnCode)) {
+                final outputFile = File(outputPath);
+                if (await outputFile.exists() && await outputFile.length() > 100) {
+                  debugPrint('FFmpeg 智能时间点帧提取成功: 时间点 $midPoint 秒');
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      } catch (probeError) {
+        debugPrint('获取视频时长出错: $probeError');
+        // 继续尝试其他方法
+      }
+
+      // 尝试使用关键帧选择器 (一次尝试多个位置)
+      for (final position in ['00:00:01', '00:00:05', '00:00:10', '00:00:00']) {
+        try {
+          String command = '-ss $position -i "$escapedVideoPath" -vframes 1 -c:v mjpeg -q:v 2 -vf "scale=320:-1" "$escapedOutputPath" -y';
+          final session = await FFmpegKit.execute(command);
+          final returnCode = await session.getReturnCode();
+
+          if (ReturnCode.isSuccess(returnCode)) {
+            final outputFile = File(outputPath);
+            if (await outputFile.exists() && await outputFile.length() > 100) {
+              debugPrint('FFmpeg 成功提取帧: $position');
+              return true;
+            }
+          }
+        } catch (e) {
+          debugPrint('尝试位置 $position 失败: $e');
+          // 继续尝试下一个位置
+        }
+      }
+
+      // 尝试提取首帧（最可靠的方法）
+      try {
+        String command = '-i "$escapedVideoPath" -vf "select=eq(n\\,0),scale=320:-1" -vframes 1 -c:v mjpeg -q:v 2 "$escapedOutputPath" -y';
+        final session = await FFmpegKit.execute(command);
+        final returnCode = await session.getReturnCode();
+
+        if (ReturnCode.isSuccess(returnCode)) {
+          final outputFile = File(outputPath);
+          if (await outputFile.exists() && await outputFile.length() > 100) {
+            debugPrint('FFmpeg 首帧提取成功');
+            return true;
+          }
+        }
+      } catch (e) {
+        debugPrint('提取首帧失败: $e');
+      }
+
+      // 尝试使用缩略图过滤器
+      try {
+        String command = '-i "$escapedVideoPath" -vf "thumbnail,scale=320:-1" -vframes 1 -c:v mjpeg -q:v 2 "$escapedOutputPath" -y';
+        final session = await FFmpegKit.execute(command);
+        final returnCode = await session.getReturnCode();
+
+        if (ReturnCode.isSuccess(returnCode)) {
+          final outputFile = File(outputPath);
+          if (await outputFile.exists() && await outputFile.length() > 100) {
+            debugPrint('FFmpeg thumbnail过滤器成功');
+            return true;
+          }
+        }
+      } catch (e) {
+        debugPrint('缩略图过滤器失败: $e');
   }
 
   void _previewMediaItem(MediaItem item) {
