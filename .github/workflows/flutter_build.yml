@@ -92,6 +92,22 @@ jobs:
             find $HOME/.pub-cache -name "FFmpegKitFlutterPlugin.java" || echo "没有找到FFmpegKitFlutterPlugin.java文件"
           fi
 
+      # 修改pubspec.yaml以暂时禁用ffmpeg_kit_flutter_full
+      - name: Disable problematic plugin
+        run: |
+          # 创建临时备份
+          cp pubspec.yaml pubspec.yaml.bak
+          
+          # 注释掉ffmpeg_kit_flutter_full依赖
+          sed -i 's/^  ffmpeg_kit_flutter_full: \^6.0.3/  # ffmpeg_kit_flutter_full: \^6.0.3  # 临时禁用/g' pubspec.yaml
+          
+          # 显示修改后的pubspec.yaml
+          echo "修改后的pubspec.yaml:"
+          cat pubspec.yaml | grep ffmpeg
+          
+          # 运行flutter pub get更新依赖
+          flutter pub get
+
       # 构建APK
       - name: Build APK
         run: |
