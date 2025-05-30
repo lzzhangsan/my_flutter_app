@@ -33,7 +33,7 @@ subprojects {
                     targetCompatibility JavaVersion.VERSION_17
                 }
 
-                // ���置 Kotlin 编译选项
+                // 配置 Kotlin 编译选项
                 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
                     kotlinOptions {
                         jvmTarget = '17'
@@ -47,6 +47,15 @@ subprojects {
             project.dependencies {
                 implementation "com.github.bumptech.glide:glide:4.15.1"
                 annotationProcessor "com.github.bumptech.glide:compiler:4.15.1"
+            }
+        }
+
+        // 应用FFmpeg Kit修复补丁
+        if (project.name == "ffmpeg_kit_flutter_full") {
+            try {
+                apply from: rootProject.file('../patches/fix_ffmpeg_kit.gradle')
+            } catch (Exception e) {
+                println "注意: 无法应用FFmpeg Kit补丁: ${e.message}"
             }
         }
     }

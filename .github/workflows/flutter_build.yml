@@ -1,0 +1,57 @@
+name: Flutter Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Prepare FFmpeg Kit patch
+        run: |
+          mkdir -p ./.pub-cache
+          if [ -d "$HOME/.pub-cache" ]; then
+            # 创建插件目录的链接
+            ln -sf $HOME/.pub-cache/hosted ./.pub-cache/hosted
+          fi
+          
+          # 应用补丁到FFmpeg Kit插件
+          FFMPEG_PLUGIN_PATH="$HOME/.pub-cache/hosted/pub.dev/ffmpeg_kit_flutter_full-6.0.3/android/src/main/java/com/arthenica/ffmpegkit/flutter/FFmpegKitFlutterPlugin.java"
+          if [ -f "$FFMPEG_PLUGIN_PATH" ]; then
+            echo "修复FFmpeg Kit插件..."
+            sed -i 's/final io.flutter.plugin.common.PluginRegistry.Registrar registrar/final Object registrar/g' "$FFMPEG_PLUGIN_PATH"
+            sed -i 's/public static void registerWith(final io.flutter.plugin.common.PluginRegistry.Registrar registrar)/public static void registerWith(final Object registrar)/g' "$FFMPEG_PLUGIN_PATH"
+            echo "FFmpeg Kit插件修复完成!"
+          else
+            echo "警告: 找不到FFmpeg Kit插件文件，跳过修复"
+          fi
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
