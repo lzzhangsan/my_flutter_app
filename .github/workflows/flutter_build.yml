@@ -74,45 +74,21 @@ jobs:
       - name: Fix FFmpeg Kit plugin
         run: |
           FFMPEG_PLUGIN_PATH="$HOME/.pub-cache/hosted/pub.dev/ffmpeg_kit_flutter_full-6.0.3/android/src/main/java/com/arthenica/ffmpegkit/flutter/FFmpegKitFlutterPlugin.java"
+          
+          # 检查文件是否存在
           if [ -f "$FFMPEG_PLUGIN_PATH" ]; then
-            echo "修复FFmpeg Kit插件..."
+            echo "找到FFmpeg Kit插件文件，开始修复..."
             
-            # 使用简单的sed命令修复插件中的问题
+            # 简单替换，将整个registerWith方法注释掉
+            sed -i 's/public static void registerWith(final io.flutter.plugin.common.PluginRegistry.Registrar registrar)/\/\/ 已注释掉: public static void registerWith(final io.flutter.plugin.common.PluginRegistry.Registrar registrar)/g' "$FFMPEG_PLUGIN_PATH"
+            sed -i '/\/\/ 已注释掉: public static void registerWith/,/}/s/^/\/\/ /' "$FFMPEG_PLUGIN_PATH"
+            
+            # 替换init方法参数中的Registrar类型
             sed -i 's/final io.flutter.plugin.common.PluginRegistry.Registrar registrar/final Object registrar/g' "$FFMPEG_PLUGIN_PATH"
-            sed -i 's/public static void registerWith(final io.flutter.plugin.common.PluginRegistry.Registrar registrar)/public static void registerWith(final Object registrar)/g' "$FFMPEG_PLUGIN_PATH"
-            
-            # 创建临时修复文件
-            cat > /tmp/ffmpeg_fix.java << 'EOF'
-    @SuppressWarnings("deprecation")
-    public static void registerWith(final Object registrar) {
-        final FFmpegKitFlutterPlugin plugin = new FFmpegKitFlutterPlugin();
-        
-        if (registrar instanceof io.flutter.plugin.common.PluginRegistry.Registrar) {
-            io.flutter.plugin.common.PluginRegistry.Registrar oldRegistrar = (io.flutter.plugin.common.PluginRegistry.Registrar) registrar;
-            plugin.channel = new MethodChannel(oldRegistrar.messenger(), "ffmpeg_kit_flutter");
-            plugin.channel.setMethodCallHandler(plugin);
-            plugin.context = oldRegistrar.context();
-            if (oldRegistrar.activity() != null) {
-                plugin.activity = oldRegistrar.activity();
-                oldRegistrar.addActivityResultListener(plugin);
-            }
-        }
-    }
-EOF
-            
-            # 使用sed替换registerWith方法
-            sed -i '/public static void registerWith(final Object registrar)/,/}/c\\'"$(cat /tmp/ffmpeg_fix.java)" "$FFMPEG_PLUGIN_PATH"
-            
-            # 修复init方法的声明
-            sed -i 's/protected void init(final BinaryMessenger messenger, final Context context, final Activity activity, final io.flutter.plugin.common.PluginRegistry.Registrar registrar, final ActivityPluginBinding activityBinding)/protected void init(final BinaryMessenger messenger, final Context context, final Activity activity, final Object registrar, final ActivityPluginBinding activityBinding)/g' "$FFMPEG_PLUGIN_PATH"
-            
-            # 修复init方法体内部对registrar的使用
-            sed -i '/this.init(messenger, context, activity, registrar, null);/,+5s/if (registrar != null)/if (registrar != null \&\& registrar instanceof io.flutter.plugin.common.PluginRegistry.Registrar)/g' "$FFMPEG_PLUGIN_PATH"
             
             echo "FFmpeg Kit插件修复完成!"
           else
-            echo "警告: 找不到FFmpeg Kit插件文件，跳过修复"
-            # 尝试查找插件文件
+            echo "警告: 找不到FFmpeg Kit插件文件: $FFMPEG_PLUGIN_PATH"
             find $HOME/.pub-cache -name "FFmpegKitFlutterPlugin.java" || echo "没有找到FFmpegKitFlutterPlugin.java文件"
           fi
 
