@@ -1,12 +1,4 @@
-﻿      }
-
-      debugPrint('所有FFmpeg方法均失败');
-      return false;
-    } catch (e) {
-      debugPrint('使用 FFmpeg 提取视频帧时出错: $e');
-      return false;
-    }
-import 'dart:io';
+﻿import 'dart:io';
 import 'dart:math' as math;
 import 'dart:async';
 import 'dart:ui' as ui;
@@ -24,6 +16,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:video_player/video_player.dart';
+import 'package:ffmpeg_kit_flutter_full/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_full/return_code.dart';
 import 'package:photo_manager/photo_manager.dart';
 // import 'package:video_thumbnail/video_thumbnail.dart';  // 临时禁用
 
@@ -572,7 +567,6 @@ class _MediaManagerPageState extends State<MediaManagerPage>
         debugPrint('删除媒体项时出错: $e');
         if (mounted) {
           ScaffoldMessenger.of(context)
-
               .showSnackBar(SnackBar(content: Text('删除媒体项时出错: $e')));
         }
       }
@@ -1407,8 +1401,8 @@ class _MediaManagerPageState extends State<MediaManagerPage>
         final double distance = math.sqrt(dx * dx + dy * dy);
         
         if (distance <= iconSize) {
-          final int pixelOffset = (y * rowStrideBytes) + (x * 4);
-          
+          final int pixelOffset = (y * rowStrideBytes) + (x * 4); // 使用固定值4代替bytesPerPixel
+
           // 圆形半透明背景
           bytes[pixelOffset] = (bytes[pixelOffset] * 0.3).toInt();
           bytes[pixelOffset + 1] = (bytes[pixelOffset + 1] * 0.3).toInt();
@@ -1444,7 +1438,7 @@ class _MediaManagerPageState extends State<MediaManagerPage>
     for (int y = startY; y < endY; y++) {
       if (y < 0 || y >= height) continue;
       for (int x = 0; x < width; x++) {
-        final int pixelOffset = (y * rowStrideBytes) + (x * 4);
+        final int pixelOffset = (y * rowStrideBytes) + (x * 4); // 使用固定值4代替bytesPerPixel
         bytes[pixelOffset] = (bytes[pixelOffset] * 0.3).toInt();
         bytes[pixelOffset + 1] = (bytes[pixelOffset + 1] * 0.3).toInt();
         bytes[pixelOffset + 2] = (bytes[pixelOffset + 2] * 0.3).toInt();
@@ -1460,20 +1454,20 @@ class _MediaManagerPageState extends State<MediaManagerPage>
       debugPrint('使用 FFmpeg 提取视频帧: $videoPath -> $outputPath');
       final escapedVideoPath = videoPath.replaceAll('\\', '/');
       final escapedOutputPath = outputPath.replaceAll('\\', '/');
-
+      
       // 创建临时目录，确保目标文件夹存在
       final outputDir = File(outputPath).parent;
       if (!await outputDir.exists()) {
         await outputDir.create(recursive: true);
       }
-
+      
       // 首先尝试视频序列的中间位置
       try {
         // 使用FFmpegKit执行命令获取视频时长
         String probCommand = '-i "$escapedVideoPath" -show_entries format=duration -v quiet -of csv="p=0"';
         final probeSession = await FFmpegKit.execute(probCommand);
         final probeReturnCode = await probeSession.getReturnCode();
-
+        
         if (ReturnCode.isSuccess(probeReturnCode)) {
           final output = await probeSession.getOutput();
           if (output != null && output.isNotEmpty) {
@@ -1491,13 +1485,13 @@ class _MediaManagerPageState extends State<MediaManagerPage>
                 // 非常短的视频，选第0秒
                 midPoint = 0;
               }
-
+              
               // 优化的命令从视频中选取关键帧
-              String midPointCommand =
+              String midPointCommand = 
                   '-ss $midPoint -i "$escapedVideoPath" -vframes 1 -c:v mjpeg -q:v 1 -vf "scale=320:-1" "$escapedOutputPath" -y';
               final midPointSession = await FFmpegKit.execute(midPointCommand);
               final midPointReturnCode = await midPointSession.getReturnCode();
-
+              
               if (ReturnCode.isSuccess(midPointReturnCode)) {
                 final outputFile = File(outputPath);
                 if (await outputFile.exists() && await outputFile.length() > 100) {
@@ -1512,14 +1506,14 @@ class _MediaManagerPageState extends State<MediaManagerPage>
         debugPrint('获取视频时长出错: $probeError');
         // 继续尝试其他方法
       }
-
+      
       // 尝试使用关键帧选择器 (一次尝试多个位置)
       for (final position in ['00:00:01', '00:00:05', '00:00:10', '00:00:00']) {
         try {
           String command = '-ss $position -i "$escapedVideoPath" -vframes 1 -c:v mjpeg -q:v 2 -vf "scale=320:-1" "$escapedOutputPath" -y';
           final session = await FFmpegKit.execute(command);
           final returnCode = await session.getReturnCode();
-
+          
           if (ReturnCode.isSuccess(returnCode)) {
             final outputFile = File(outputPath);
             if (await outputFile.exists() && await outputFile.length() > 100) {
@@ -1532,13 +1526,13 @@ class _MediaManagerPageState extends State<MediaManagerPage>
           // 继续尝试下一个位置
         }
       }
-
+      
       // 尝试提取首帧（最可靠的方法）
       try {
         String command = '-i "$escapedVideoPath" -vf "select=eq(n\\,0),scale=320:-1" -vframes 1 -c:v mjpeg -q:v 2 "$escapedOutputPath" -y';
         final session = await FFmpegKit.execute(command);
         final returnCode = await session.getReturnCode();
-
+        
         if (ReturnCode.isSuccess(returnCode)) {
           final outputFile = File(outputPath);
           if (await outputFile.exists() && await outputFile.length() > 100) {
@@ -1549,13 +1543,13 @@ class _MediaManagerPageState extends State<MediaManagerPage>
       } catch (e) {
         debugPrint('提取首帧失败: $e');
       }
-
+      
       // 尝试使用缩略图过滤器
       try {
         String command = '-i "$escapedVideoPath" -vf "thumbnail,scale=320:-1" -vframes 1 -c:v mjpeg -q:v 2 "$escapedOutputPath" -y';
         final session = await FFmpegKit.execute(command);
         final returnCode = await session.getReturnCode();
-
+        
         if (ReturnCode.isSuccess(returnCode)) {
           final outputFile = File(outputPath);
           if (await outputFile.exists() && await outputFile.length() > 100) {
@@ -1565,6 +1559,14 @@ class _MediaManagerPageState extends State<MediaManagerPage>
         }
       } catch (e) {
         debugPrint('缩略图过滤器失败: $e');
+      }
+      
+      debugPrint('所有FFmpeg方法均失败');
+      return false;
+    } catch (e) {
+      debugPrint('使用 FFmpeg 提取视频帧时出错: $e');
+      return false;
+    }
   }
 
   void _previewMediaItem(MediaItem item) {
@@ -1833,131 +1835,141 @@ class _MediaManagerPageState extends State<MediaManagerPage>
   }
 
   Future<void> _scanAndUpdateFileHashes() async {
-    // 显示进度对话框
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            StreamBuilder<String>(
-              stream: _progressController.stream,
-              builder: (context, snapshot) {
-                return Text(
-                  snapshot.data ?? '正在扫描媒体文件...',
-                  style: const TextStyle(fontSize: 14),
-                );
-              },
-            ),
-          ],
+    try {
+      // 显示进度对话框
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              StreamBuilder<String>(
+                stream: _progressController.stream,
+                builder: (context, snapshot) {
+                  return Text(
+                    snapshot.data ?? '正在扫描媒体文件...',
+                    style: const TextStyle(fontSize: 14),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
 
-    // 递归获取所有媒体项
-    final allMediaItems = await _getAllMediaItemsRecursively('root');
-    
-    int processedCount = 0;
-    int updatedCount = 0;
-    int duplicateCount = 0;
-    int errorCount = 0;
-    Map<String, List<Map<String, dynamic>>> hashGroups = {};
+      // 递归获取所有媒体项
+      final allMediaItems = await _getAllMediaItemsRecursively('root');
+      
+      int processedCount = 0;
+      int updatedCount = 0;
+      int duplicateCount = 0;
+      int errorCount = 0;
+      Map<String, List<Map<String, dynamic>>> hashGroups = {};
 
-    // 第一遍扫描：计算所有文件的哈希值
-    for (var item in allMediaItems) {
-      try {
-        // 更新进度
-        _progressController.add('正在处理: ${item['name']}');
-        
-        // 跳过文件夹
-        if (item['type'] == MediaType.folder.index) {
-          processedCount++;
-          continue;
-        }
+      // 第一遍扫描：计算所有文件的哈希值
+      for (var item in allMediaItems) {
+        try {
+          // 更新进度
+          _progressController.add('正在处理: ${item['name']}');
+          
+          // 跳过文件夹
+          if (item['type'] == MediaType.folder.index) {
+            processedCount++;
+            continue;
+          }
 
-        // 检查文件是否存在
-        final file = File(item['path']);
-        if (!await file.exists()) {
-          errorCount++;
-          processedCount++;
-          continue;
-        }
-
-        // 计算文件哈希
-        final fileHash = await _calculateFileHash(file);
-        if (fileHash.isEmpty) {
-          errorCount++;
-          processedCount++;
-          continue;
-        }
-        
-        // 更新数据库中的哈希值
-        await _databaseHelper.updateMediaItemHash(item['id'], fileHash);
-        
-        // 将文件按哈希值分组
-        if (!hashGroups.containsKey(fileHash)) {
-          hashGroups[fileHash] = [];
-        }
-        hashGroups[fileHash]!.add(item);
-        
-        updatedCount++;
-        processedCount++;
-      } catch (e) {
-        print('处理文件时出错: ${item['name']}, 错误: $e');
-        errorCount++;
-        processedCount++;
-      }
-    }
-
-    // 第二遍扫描：处理重复文件
-    for (var hash in hashGroups.keys) {
-      var files = hashGroups[hash]!;
-      if (files.length > 1) {
-        // 有重复文件
-        _progressController.add('发现重复文件: ${files.map((f) => f['name']).join(', ')}');
-        
-        // 保留第一个文件，将其他文件移动到回收站
-        var originalFile = files.first;
-        var duplicates = files.skip(1).toList();
-        
-        for (var duplicate in duplicates) {
-          try {
-            // 将重复文件移动到回收站
-            await _databaseHelper.updateMediaItemDirectory(duplicate['id'], 'recycle_bin');
-            duplicateCount++;
-          } catch (e) {
-            print('移动重复文件到回收站时出错: ${duplicate['name']}, 错误: $e');
+          // 检查文件是否存在
+          final file = File(item['path']);
+          if (!await file.exists()) {
             errorCount++;
+            processedCount++;
+            continue;
+          }
+
+          // 计算文件哈希
+          final fileHash = await _calculateFileHash(file);
+          if (fileHash.isEmpty) {
+            errorCount++;
+            processedCount++;
+            continue;
+          }
+          
+          // 更新数据库中的哈希值
+          await _databaseHelper.updateMediaItemHash(item['id'], fileHash);
+          
+          // 将文件按哈希值分组
+          if (!hashGroups.containsKey(fileHash)) {
+            hashGroups[fileHash] = [];
+          }
+          hashGroups[fileHash]!.add(item);
+          
+          updatedCount++;
+          processedCount++;
+        } catch (e) {
+          print('处理文件时出错: ${item['name']}, 错误: $e');
+          errorCount++;
+          processedCount++;
+        }
+      }
+
+      // 第二遍扫描：处理重复文件
+      for (var hash in hashGroups.keys) {
+        var files = hashGroups[hash]!;
+        if (files.length > 1) {
+          // 有重复文件
+          _progressController.add('发现重复文件: ${files.map((f) => f['name']).join(', ')}');
+          
+          // 保留第一个文件，将其他文件移动到回收站
+          var originalFile = files.first;
+          var duplicates = files.skip(1).toList();
+          
+          for (var duplicate in duplicates) {
+            try {
+              // 将重复文件移动到回收站
+              await _databaseHelper.updateMediaItemDirectory(duplicate['id'], 'recycle_bin');
+              duplicateCount++;
+            } catch (e) {
+              print('移动重复文件到回收站时出错: ${duplicate['name']}, 错误: $e');
+              errorCount++;
+            }
           }
         }
       }
-    }
 
-    // 关闭进度对话框
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+      // 关闭进度对话框
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
-    // 显示结果
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '扫描完成\n'
-            '处理文件: $processedCount\n'
-            '更新哈希: $updatedCount\n'
-            '重复文件: $duplicateCount\n'
-            '错误: $errorCount'
+      // 显示结果
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '扫描完成\n'
+              '处理文件: $processedCount\n'
+              '更新哈希: $updatedCount\n'
+              '重复文件: $duplicateCount\n'
+              '错误: $errorCount'
+            ),
+            duration: const Duration(seconds: 5),
           ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-      
-      // 重新加载媒体列表以反映变化
-      await _loadMediaItems();
+        );
+        
+        // 重新加载媒体列表以反映变化
+        await _loadMediaItems();
+      }
+    } catch (e) {
+      print('扫描文件哈希时出错: $e');
+      if (mounted) {
+        Navigator.of(context).pop(); // 关闭进度对话框
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('扫描失败: $e')),
+        );
+      }
     }
   }
 
@@ -2131,3 +2143,4 @@ class _MediaManagerPageState extends State<MediaManagerPage>
     );
   }
 }
+
